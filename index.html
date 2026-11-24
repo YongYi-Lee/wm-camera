@@ -47,9 +47,9 @@ details summary{cursor:pointer;min-height:44px;display:flex;align-items:center;f
 <h1><i></i>施工水印相機 </h1>
 
 <div class="card">
-  <div class="row"><label for="ttl">標題（公司名稱）</label><input type="text" id="ttl" list="ttlL" placeholder="例如：大同" autocomplete="off"><datalist id="ttlL"></datalist></div>
-  <div class="row"><label for="site">施工區域</label><input type="text" id="site" list="siteL" placeholder="例如：羅娜國小" autocomplete="off"><datalist id="siteL"></datalist></div>
-  <div class="row"><label for="work">施工內容</label><input type="text" id="work" list="workL" placeholder="例如：模組清洗" autocomplete="off"><datalist id="workL"></datalist></div>
+  <div class="row"><label for="ttl">標題（公司名稱）</label><input type="text" id="ttl" list="ttlL" autocomplete="off"><datalist id="ttlL"></datalist></div>
+  <div class="row"><label for="site">施工區域</label><input type="text" id="site" list="siteL" autocomplete="off"><datalist id="siteL"></datalist></div>
+  <div class="row"><label for="work">施工內容</label><input type="text" id="work" list="workL" autocomplete="off"><datalist id="workL"></datalist></div>
   <div class="row"><label>施工進度</label><div class="seg" id="prog"></div></div>
   <div class="meta" id="dateLine"></div>
 </div>
@@ -89,7 +89,7 @@ $('ttl').oninput=e=>{st.title=e.target.value;persist()};
 $('site').oninput=e=>{st.site=e.target.value;persist()};
 $('work').oninput=e=>{st.work=e.target.value;persist()};
 const remember=(k,v)=>{v=v.trim();if(!v)return;st[k]=[v,...st[k].filter(x=>x!==v)].slice(0,8)};
-const ready=()=>{if(!st.title.trim()||!st.site.trim()||!st.work.trim()){alertBox('請先填寫標題、施工區域和施工內容');return false}remember('titles',st.title);remember('sites',st.site);remember('works',st.work);persist();opts($('ttlL'),st.titles);opts($('siteL'),st.sites);opts($('workL'),st.works);return true};
+const ready=()=>{remember('titles',st.title);remember('sites',st.site);remember('works',st.work);persist();opts($('ttlL'),st.titles);opts($('siteL'),st.sites);opts($('workL'),st.works);return true};
 const alertBox=m=>{const n=$('warn');n.textContent=m;n.hidden=false;setTimeout(()=>n.hidden=true,3000)};
 
 const cur=()=>({title:st.title.trim(),site:st.site.trim(),work:st.work.trim(),date:today(),prog:PROG[st.prog]});
@@ -103,16 +103,18 @@ async function stamp(file,f){
   const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
   g.drawImage(i,0,0,W,H);URL.revokeObjectURL(u);
   const s=Math.min(W,H)/1108,Y=v=>H-(1108-v)*s,X=v=>v*s;
-  const x0=X(28),x1=X(534),y0=Y(809),y1=Y(1080),hb=Y(872),fb=Y(1008),r=X(12);
-  g.save();g.beginPath();g.roundRect?g.roundRect(x0,y0,x1-x0,y1-y0,r):g.rect(x0,y0,x1-x0,y1-y0);g.clip();
-  g.fillStyle='rgba(15,65,175,.88)';g.fillRect(x0,y0,x1-x0,hb-y0);
-  g.fillStyle='rgba(235,235,240,.47)';g.fillRect(x0,hb,x1-x0,fb-hb);
-  g.fillStyle='rgba(35,85,190,.84)';g.fillRect(x0,fb,x1-x0,y1-fb);g.restore();
-  g.fillStyle='#ffc800';g.beginPath();g.arc(X(61),Y(841),X(9),0,7);g.fill();
+  const rows=[['施 工 區 域:  ',f.site],['施 工 內 容:  ',f.work],['拍 攝 時 間:  ',f.date]].filter(r=>r[1]);
+  const fb=1008,mid=fb-(59+(rows.length-1)*38.5),hb=f.title?mid-63:mid;
+  const x0=X(28),x1=X(534),r=X(12),top=Y(hb);
+  g.save();g.beginPath();g.roundRect?g.roundRect(x0,top,x1-x0,Y(1080)-top,r):g.rect(x0,top,x1-x0,Y(1080)-top);g.clip();
+  if(f.title){g.fillStyle='rgba(15,65,175,.88)';g.fillRect(x0,Y(hb),x1-x0,Y(mid)-Y(hb))}
+  g.fillStyle='rgba(235,235,240,.47)';g.fillRect(x0,Y(mid),x1-x0,Y(fb)-Y(mid));
+  g.fillStyle='rgba(35,85,190,.84)';g.fillRect(x0,Y(fb),x1-x0,Y(1080)-Y(fb));g.restore();
   g.textBaseline='middle';
-  g.fillStyle='#fff';g.textAlign='center';g.font=`700 ${X(30)}px ${F}`;g.fillText(f.title,X(281),Y(841));
+  if(f.title){g.fillStyle='#ffc800';g.beginPath();g.arc(X(61),Y(hb+32),X(9),0,7);g.fill();
+    g.fillStyle='#fff';g.textAlign='center';g.font=`700 ${X(30)}px ${F}`;g.fillText(f.title,X(281),Y(hb+32))}
   g.textAlign='left';g.font=`500 ${X(26)}px ${F}`;g.fillStyle='#0a0a0a';
-  [['施 工 區 域:  ',f.site,900],['施 工 內 容:  ',f.work,938],['拍 攝 時 間:  ',f.date,977]].forEach(([a,b,y])=>g.fillText(a+b,X(45),Y(y)));
+  rows.forEach(([k,v],i)=>g.fillText(k+v,X(45),Y(mid+28+i*38.5)));
   g.fillStyle='#fff';g.fillText('施 工 進 度:  '+f.prog,X(45),Y(1047));
   return new Promise(ok=>c.toBlob(b=>ok({url:URL.createObjectURL(b),blob:b}),'image/jpeg',.92));
 }
@@ -142,7 +144,6 @@ async function add(files){
   for(const file of files){try{const r=await stamp(file,f);items.push({file,url:r.url,blob:r.blob,fields:f})}catch(e){}}
   show();
 }
-document.querySelectorAll('.shoot,.alt').forEach(l=>l.addEventListener('click',e=>{if(!st.title.trim()||!st.site.trim()||!st.work.trim()){e.preventDefault();alertBox('請先填寫標題、施工區域和施工內容')}}));
 const fname=it=>`${it.fields.site}_${it.fields.prog}_${it.fields.date.replace(/\./g,'')}_${items.indexOf(it)+1}.jpg`;
 const toFile=it=>new File([it.blob],fname(it),{type:'image/jpeg'});
 async function shareFiles(list){
