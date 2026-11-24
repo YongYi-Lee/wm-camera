@@ -29,7 +29,7 @@ input[readonly]{color:var(--mute)}
 .grip{flex:none;width:40px;height:46px;display:none;align-items:center;justify-content:center;color:var(--mute);font-size:22px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .x{flex:none;width:44px;height:46px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--red);font-size:20px;display:none}
 .editing .grip{display:flex}.editing .x{display:block}
-.editing #tabName,.editing #progName,.editing .f input.name{font-size:14px;padding:6px 10px;margin-bottom:6px;color:var(--ink);background:var(--card)}
+.editing #ttlName,.editing #tabName,.editing #progName,.editing .f input.name{font-size:14px;padding:6px 10px;margin-bottom:6px;color:var(--ink);background:var(--card)}
 .f.drag{opacity:.95;box-shadow:0 8px 24px rgba(0,0,0,.25);position:relative;z-index:5}
 .f.ghost{outline:2px dashed var(--blue);outline-offset:2px}
 .add{display:none;width:100%;min-height:46px;border-radius:10px;border:2px dashed var(--line);background:none;color:var(--blue);font-size:16px;font-weight:600;font-family:inherit}
@@ -71,7 +71,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
   <div class="head"><strong id="formHead">水印內容</strong><button class="btn" id="edit">編輯</button></div>
   <div class="row edonly"><label for="tabName">分頁名稱</label>
     <div style="display:flex;gap:8px"><input type="text" id="tabName" class="name"><button class="btn" id="tabL" aria-label="分頁左移">←</button><button class="btn" id="tabR" aria-label="分頁右移">→</button></div></div>
-  <div class="row"><label for="ttl">標題</label><input type="text" id="ttl" list="ttlL" autocomplete="off"><datalist id="ttlL"></datalist></div>
+  <div class="row"><label for="ttl" id="ttlLbl">標題</label><input type="text" class="name" id="ttlName" placeholder="標題欄位名稱" hidden><input type="text" id="ttl" list="ttlL" autocomplete="off"><datalist id="ttlL"></datalist></div>
   <div id="fields"></div>
   <button class="add" id="add">＋ 新增欄位</button>
   <div class="row" id="progRow" style="margin-top:12px"><span class="lbl" id="progLbl"></span><input type="text" class="name" id="progName" placeholder="進度欄位名稱" hidden><div class="seg" id="prog"></div><button class="btn edonly" id="progDel" style="width:100%;margin-top:8px">移除進度按鈕</button></div>
@@ -99,7 +99,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 const mkTab=(id,name,work,p)=>({id,name,title:'',progName:'施工進度',prog:0,progOpts:[p+'前',p+'中',p+'後'],
   fields:[{id:id*10+1,name:'施工區域',value:''},{id:id*10+2,name:'施工內容',value:''},{id:id*10+3,name:'拍攝時間',auto:'date'}]});
 const PRESET={1:()=>mkTab(1,'清洗','模組清洗','清洗'),
-  2:()=>({...mkTab(2,'巡檢','','巡檢'),progOpts:[],fields:[{id:21,name:'施工內容',value:''},{id:22,name:'拍攝時間',auto:'date'},{id:23,name:'施工項目',value:''},{id:24,name:'施工單位',value:''}]}),3:()=>mkTab(3,'除草','除草','除草')};
+  2:()=>({...mkTab(2,'巡檢','','巡檢'),titleName:'案場',progOpts:[],fields:[{id:21,name:'施工內容',value:''},{id:22,name:'拍攝時間',auto:'date'},{id:23,name:'施工項目',value:''},{id:24,name:'施工單位',value:''}]}),3:()=>mkTab(3,'除草','除草','除草')};
 const DEF={tabs:[PRESET[1](),PRESET[2](),PRESET[3]()],cur:1,titles:[],hist:{}};
 let uid=Date.now();
 let st=structuredClone(DEF);
@@ -164,6 +164,7 @@ function render(){
   $('edit').textContent=editing?'完成':'編輯';$('edit').classList.toggle('pri',editing);
   $('formHead').textContent=editing?`編輯「${t.name||'未命名'}」分頁`:'水印內容';
   $('tabName').value=t.name;
+  $('ttlLbl').textContent=t.titleName||'標題';$('ttlLbl').hidden=editing;$('ttlName').hidden=!editing;$('ttlName').value=t.titleName||'標題';
   $('ttl').value=t.title;opts($('ttlL'),st.titles);
   $('progLbl').textContent=t.progName||'進度';$('progLbl').hidden=editing;
   $('progName').hidden=!editing;$('progName').value=t.progName;
@@ -173,6 +174,7 @@ $('edit').onclick=()=>{editing=!editing;render()};
 $('tabName').oninput=e=>{T().name=e.target.value;persist();renderTabs();$('formHead').textContent=`編輯「${e.target.value||'未命名'}」分頁`};
 const moveTab=d=>{const i=st.tabs.indexOf(T()),j=i+d;if(j<0||j>=st.tabs.length)return;[st.tabs[i],st.tabs[j]]=[st.tabs[j],st.tabs[i]];persist();renderTabs()};
 $('tabL').onclick=()=>moveTab(-1);$('tabR').onclick=()=>moveTab(1);
+$('ttlName').oninput=e=>{T().titleName=e.target.value;persist()};
 $('ttl').oninput=e=>{T().title=e.target.value;persist()};
 $('progAdd').onclick=()=>{const t=T();t.progOpts=['施工前','施工中','施工後'];t.prog=0;t.progName=t.progName||'施工進度';persist();render()};
 $('progDel').onclick=()=>twoTap($('progDel'),'移除進度按鈕','再按一次確認',()=>{T().progOpts=[];persist();render()});
@@ -180,7 +182,7 @@ $('progName').oninput=e=>{T().progName=e.target.value;persist()};
 $('add').onclick=()=>{T().fields.push({id:++uid,name:'',value:''});persist();renderFields();const ins=$('fields').querySelectorAll('input.name');ins[ins.length-1]?.focus()};
 $('reset').onclick=()=>twoTap($('reset'),'恢復這頁的預設欄位','再按一次確認',()=>{
   const t=T(),base=PRESET[t.id]?PRESET[t.id]():mkTab(t.id,t.name,'','施工');
-  Object.assign(t,{title:base.title,progName:base.progName,progOpts:base.progOpts,prog:0,fields:base.fields});if(!PRESET[t.id])t.fields.forEach(f=>f.id=++uid);
+  Object.assign(t,{title:base.title,titleName:base.titleName||'標題',progName:base.progName,progOpts:base.progOpts,prog:0,fields:base.fields});if(!PRESET[t.id])t.fields.forEach(f=>f.id=++uid);
   persist();render();warn('已恢復預設欄位')});
 $('delTab').onclick=()=>{if(st.tabs.length<=1){warn('至少要保留一個分頁');return}
   twoTap($('delTab'),'刪除這個分頁','再按一次確認刪除',()=>{const i=st.tabs.indexOf(T());st.tabs.splice(i,1);st.cur=st.tabs[Math.max(0,i-1)].id;editing=false;persist();render()})};
