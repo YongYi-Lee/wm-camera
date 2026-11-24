@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>施工水印相機</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="施工水印">
+<meta name="theme-color" content="#1f4fbf">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<style>
+/* VOICE: plain field tool, big targets, no decoration
+   IDEA: a site clipboard — pick job, press shutter
+   PICTURE: the live watermark preview / results themselves
+   COLOUR and TYPE: watermark blue #1f4fbf, yellow dot accent, system CJK sans
+   LAYOUT: single column, controls top, results stacked below */
+:root{color-scheme:light dark;--bg:light-dark(#f4f6fb,#0f1420);--card:light-dark(#fff,#1a2132);--ink:light-dark(#141a26,#e9edf5);--mute:light-dark(#5b6476,#9aa3b5);--line:light-dark(#dde2ec,#2b3448);--blue:#1f4fbf;--yel:#ffc800}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"PingFang TC","Noto Sans TC",sans-serif;overflow-x:clip}
+main{max-width:560px;margin:0 auto;padding:16px 16px 48px}
+h1{font-size:22px;margin:4px 0 14px;display:flex;align-items:center;gap:8px}
+h1 i{width:12px;height:12px;border-radius:50%;background:var(--yel);display:inline-block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:14px;color:var(--mute);margin:0 0 6px}
+select,textarea,input[type=text]{width:100%;font-size:16px;font-family:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.row{margin-bottom:12px}.row:last-child{margin-bottom:0}
+.seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.seg button{min-height:52px;font-size:17px;font-weight:600;font-family:inherit;border-radius:10px;border:2px solid var(--line);background:var(--bg);color:var(--ink)}
+.seg button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.shoot{display:flex;align-items:center;justify-content:center;gap:10px;min-height:64px;border-radius:14px;background:var(--blue);color:#fff;font-size:20px;font-weight:700;cursor:pointer}
+.alt{display:flex;align-items:center;justify-content:center;min-height:48px;margin-top:10px;border-radius:12px;border:1px solid var(--line);font-size:16px;cursor:pointer}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
+.meta{font-size:14px;color:var(--mute);margin-top:8px}
+.out img{width:100%;border-radius:10px;display:block;-webkit-touch-callout:default}
+.out p{margin:8px 0;font-size:14px;color:var(--mute)}.prow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px}.out .save,.out .del{width:100%;min-height:48px;font-weight:600}.del.warn{color:#d33;border-color:#d33}
+.btn{min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit}
+.empty{text-align:center;color:var(--mute);padding:28px 8px}
+details summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}
+.acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.acts .btn{padding:0 6px}.acts:has(.btn:not([hidden]))~*{}
+:focus-visible{outline:3px solid var(--yel);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1><i></i>施工水印相機 </h1>
+
+<div class="card">
+  <div class="row"><label for="site">施工區域</label><input type="text" id="site" list="siteL" placeholder="例如：羅娜國小" autocomplete="off"><datalist id="siteL"></datalist></div>
+  <div class="row"><label for="work">施工內容</label><input type="text" id="work" list="workL" placeholder="例如：模組清洗" autocomplete="off"><datalist id="workL"></datalist></div>
+  <div class="row"><label>施工進度</label><div class="seg" id="prog"></div></div>
+  <div class="meta" id="dateLine"></div>
+</div>
+
+<div class="meta" id="warn" hidden style="color:#d33;font-weight:600;margin:0 0 10px"></div>
+<label class="shoot" for="cam">拍照</label>
+<input id="cam" type="file" accept="image/*" capture="environment">
+<label class="alt" for="lib">從相簿選（可多張）</label>
+<input id="lib" type="file" accept="image/*" multiple>
+
+<strong id="count" style="display:block;margin:22px 0 10px">成果</strong>
+<div class="acts"><button class="btn" id="redo" hidden>套用新欄位</button><button class="btn" id="clr" hidden>全部移除</button><button class="btn" id="all" hidden style="background:var(--blue);color:#fff;border-color:var(--blue)">全部儲存</button></div>
+<div id="results"><div class="card empty">拍照後，加好水印的照片會出現在這裡。<br>每張照片下方有「儲存照片」按鈕。</div></div>
+
+</main>
+
+<script>
+{
+const PROG=['清洗前','清洗中','清洗後'];
+const DEF={title:'大同',site:'',work:'模組清洗',prog:0,sites:[],works:['模組清洗']};
+let st={...DEF};
+try{const s=JSON.parse(localStorage.getItem('wmcam2')||'null');if(s)st={...DEF,...s}}catch(e){}
+const persist=()=>{try{localStorage.setItem('wmcam2',JSON.stringify(st))}catch(e){}};
+const $=id=>document.getElementById(id);
+const items=[];// {file, url, fields}
+
+const today=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())}`};
+const opts=(dl,arr)=>{dl.innerHTML='';arr.forEach(t=>{const o=document.createElement('option');o.value=t;dl.appendChild(o)})};
+function render(){
+  $('site').value=st.site;$('work').value=st.work;
+  opts($('siteL'),st.sites);opts($('workL'),st.works);
+  $('prog').innerHTML='';
+  PROG.forEach((t,k)=>{const b=document.createElement('button');b.textContent=t;b.className=k==st.prog?'on':'';b.onclick=()=>{st.prog=k;persist();render()};$('prog').appendChild(b)});
+  $('dateLine').textContent=`拍攝時間自動帶入：${today()}`;
+}
+$('site').oninput=e=>{st.site=e.target.value;persist()};
+$('work').oninput=e=>{st.work=e.target.value;persist()};
+const remember=(k,v)=>{v=v.trim();if(!v)return;st[k]=[v,...st[k].filter(x=>x!==v)].slice(0,8)};
+const ready=()=>{if(!st.site.trim()||!st.work.trim()){alertBox('請先填寫施工區域和施工內容');return false}remember('sites',st.site);remember('works',st.work);persist();opts($('siteL'),st.sites);opts($('workL'),st.works);return true};
+const alertBox=m=>{const n=$('warn');n.textContent=m;n.hidden=false;setTimeout(()=>n.hidden=true,3000)};
+
+const cur=()=>({title:st.title,site:st.site.trim(),work:st.work.trim(),date:today(),prog:PROG[st.prog]});
+const F='"PingFang TC","Noto Sans TC",sans-serif';
+
+function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file);const i=new Image();i.onload=()=>ok({i,u});i.onerror=no;i.src=u})}
+
+async function stamp(file,f){
+  const {i,u}=await loadImg(file);
+  let W=i.naturalWidth,H=i.naturalHeight;const k=Math.min(1,Math.sqrt(16e6/(W*H)));W=Math.round(W*k);H=Math.round(H*k);
+  const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+  g.drawImage(i,0,0,W,H);URL.revokeObjectURL(u);
+  const s=Math.min(W,H)/1108,Y=v=>H-(1108-v)*s,X=v=>v*s;
+  const x0=X(28),x1=X(534),y0=Y(809),y1=Y(1080),hb=Y(872),fb=Y(1008),r=X(12);
+  g.save();g.beginPath();g.roundRect?g.roundRect(x0,y0,x1-x0,y1-y0,r):g.rect(x0,y0,x1-x0,y1-y0);g.clip();
+  g.fillStyle='rgba(15,65,175,.88)';g.fillRect(x0,y0,x1-x0,hb-y0);
+  g.fillStyle='rgba(235,235,240,.47)';g.fillRect(x0,hb,x1-x0,fb-hb);
+  g.fillStyle='rgba(35,85,190,.84)';g.fillRect(x0,fb,x1-x0,y1-fb);g.restore();
+  g.fillStyle='#ffc800';g.beginPath();g.arc(X(61),Y(841),X(9),0,7);g.fill();
+  g.textBaseline='middle';
+  g.fillStyle='#fff';g.textAlign='center';g.font=`700 ${X(30)}px ${F}`;g.fillText(f.title,X(281),Y(841));
+  g.textAlign='left';g.font=`500 ${X(26)}px ${F}`;g.fillStyle='#0a0a0a';
+  [['施 工 區 域:  ',f.site,900],['施 工 內 容:  ',f.work,938],['拍 攝 時 間:  ',f.date,977]].forEach(([a,b,y])=>g.fillText(a+b,X(45),Y(y)));
+  g.fillStyle='#fff';g.fillText('施 工 進 度:  '+f.prog,X(45),Y(1047));
+  return new Promise(ok=>c.toBlob(b=>ok({url:URL.createObjectURL(b),blob:b}),'image/jpeg',.92));
+}
+
+function show(){
+  const box=$('results');box.innerHTML='';
+  items.slice().reverse().forEach(it=>{
+    const d=document.createElement('div');d.className='card out';
+    const im=document.createElement('img');im.src=it.url;im.alt='加好水印的照片';
+    const p=document.createElement('p');p.textContent=`${it.fields.site}・${it.fields.work}・${it.fields.prog}`;
+    const b=document.createElement('button');b.className='btn save';b.textContent=it.saved?'已儲存 ✓':'儲存照片';
+    b.onclick=()=>saveOne(it,b);
+    const x=document.createElement('button');x.className='btn del';x.textContent='刪除';
+    let t=null;x.onclick=()=>{
+      if(!t){x.textContent='確認刪除';x.classList.add('warn');t=setTimeout(()=>{t=null;x.textContent='刪除';x.classList.remove('warn')},3000);return}
+      clearTimeout(t);URL.revokeObjectURL(it.url);items.splice(items.indexOf(it),1);
+      if(items.length)show();else{$('results').innerHTML='<div class="card empty">拍照後，加好水印的照片會出現在這裡。</div>';show2()}};
+    const r=document.createElement('div');r.className='prow';r.append(b,x);
+    d.append(im,p,r);box.appendChild(d);
+  });
+  $('count').textContent=`成果（${items.length} 張）`;$('redo').hidden=!items.length;$('all').hidden=!items.length;$('clr').hidden=!items.length;
+}
+
+async function add(files){
+  if(!ready())return;
+  const f=cur();
+  for(const file of files){try{const r=await stamp(file,f);items.push({file,url:r.url,blob:r.blob,fields:f})}catch(e){}}
+  show();
+}
+document.querySelectorAll('.shoot,.alt').forEach(l=>l.addEventListener('click',e=>{if(!st.site.trim()||!st.work.trim()){e.preventDefault();alertBox('請先填寫施工區域和施工內容')}}));
+const fname=it=>`${it.fields.site}_${it.fields.prog}_${it.fields.date.replace(/\./g,'')}_${items.indexOf(it)+1}.jpg`;
+const toFile=it=>new File([it.blob],fname(it),{type:'image/jpeg'});
+async function shareFiles(list){
+  const files=list.map(toFile);
+  if(navigator.canShare&&navigator.canShare({files})){
+    try{await navigator.share({files});list.forEach(it=>it.saved=true);return true}
+    catch(e){if(e.name==='AbortError')return false}
+  }
+  for(const f of files){const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;document.body.appendChild(a);a.click();a.remove();await new Promise(r=>setTimeout(r,300))}
+  list.forEach(it=>it.saved=true);return true;
+}
+async function saveOne(it,b){b.disabled=true;const ok=await shareFiles([it]);b.disabled=false;b.textContent=it.saved?'已儲存 ✓':'儲存照片';return ok}
+$('all').onclick=async()=>{const todo=items.filter(it=>!it.saved);if(!todo.length){alertBox('全部都已儲存過');return}if(await shareFiles(todo))show()};
+let clrT=null;
+$('clr').onclick=()=>{const b=$('clr');
+  if(!clrT){b.textContent='再按一次確認';b.style.color='#d33';b.style.borderColor='#d33';clrT=setTimeout(()=>{clrT=null;b.textContent='全部移除';b.style.color='';b.style.borderColor=''},3000);return}
+  clearTimeout(clrT);clrT=null;b.textContent='全部移除';b.style.color='';b.style.borderColor='';
+  items.forEach(it=>URL.revokeObjectURL(it.url));items.length=0;
+  $('results').innerHTML='<div class="card empty">已清空。拍照後，加好水印的照片會出現在這裡。</div>';show2()};
+const show2=()=>{$('count').textContent='成果';['redo','all','clr'].forEach(k=>$(k).hidden=true)};
+$('all').onclick=async()=>{const bs=[...document.querySelectorAll('.save')].reverse();for(let k=0;k<items.length;k++){if(items[k].saved)continue;if(!await saveOne(items[k],bs[k]))break}};
+$('cam').onchange=e=>{add([...e.target.files]);e.target.value=''};
+$('lib').onchange=e=>{add([...e.target.files]);e.target.value=''};
+$('redo').onclick=async()=>{if(!ready())return;const f=cur();for(const it of items){URL.revokeObjectURL(it.url);const r=await stamp(it.file,{...f,date:it.fields.date});it.url=r.url;it.blob=r.blob;it.saved=false;it.fields={...f,date:it.fields.date}}show()};
+
+render();
+}
+</script>
+</body>
+</html>

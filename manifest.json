@@ -1,0 +1,1 @@
+{"name": "施工水印相機", "short_name": "施工水印", "start_url": ".", "display": "standalone", "background_color": "#f4f6fb", "theme_color": "#1f4fbf", "icons": [{"src": "icon.png", "sizes": "512x512", "type": "image/png"}]}
