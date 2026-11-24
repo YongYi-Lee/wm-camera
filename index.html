@@ -29,7 +29,7 @@ input[readonly]{color:var(--mute)}
 .grip{flex:none;width:40px;height:46px;display:none;align-items:center;justify-content:center;color:var(--mute);font-size:22px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 .x{flex:none;width:44px;height:46px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--red);font-size:20px;display:none}
 .editing .grip{display:flex}.editing .x{display:block}
-.editing #progName,.editing .f input.name{font-size:14px;padding:6px 10px;margin-bottom:6px;color:var(--ink);background:var(--card)}
+.editing #tabName,.editing #progName,.editing .f input.name{font-size:14px;padding:6px 10px;margin-bottom:6px;color:var(--ink);background:var(--card)}
 .f.drag{opacity:.95;box-shadow:0 8px 24px rgba(0,0,0,.25);position:relative;z-index:5}
 .f.ghost{outline:2px dashed var(--blue);outline-offset:2px}
 .add{display:none;width:100%;min-height:46px;border-radius:10px;border:2px dashed var(--line);background:none;color:var(--blue);font-size:16px;font-weight:600;font-family:inherit}
@@ -50,6 +50,13 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 .prow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px}
 .prow .btn{width:100%;min-height:48px;font-weight:600}
 .empty{text-align:center;color:var(--mute);padding:28px 8px}
+.tabs{display:flex;gap:8px;overflow-x:auto;margin:0 -16px 12px;padding:2px 16px 4px;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;min-height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px;font-weight:600;font-family:inherit;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.tab.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.add-tab{color:var(--blue);border-style:dashed;padding:0 16px}
+.edonly{display:none!important}.editing .edonly{display:block!important}.editing div.edonly[style*=grid]{display:grid!important}
+.segin{min-height:52px;text-align:center;font-weight:600;font-size:16px;font-family:inherit;border-radius:10px;border:2px dashed var(--line);background:var(--bg);color:var(--ink);padding:0 4px;width:100%}
+.segin.on{border-color:var(--blue)}
 #warn{color:var(--red);font-weight:600;margin:0 0 10px}
 :focus-visible{outline:3px solid var(--yel);outline-offset:2px}
 </style>
@@ -58,14 +65,21 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 <main>
 <h1><i></i>施工水印相機</h1>
 
+<div class="tabs" id="tabs"></div>
+
 <div class="card" id="form">
-  <div class="head"><strong>水印內容</strong><button class="btn" id="edit">編輯欄位</button></div>
+  <div class="head"><strong id="formHead">水印內容</strong><button class="btn" id="edit">編輯</button></div>
+  <div class="row edonly"><label for="tabName">分頁名稱</label>
+    <div style="display:flex;gap:8px"><input type="text" id="tabName" class="name"><button class="btn" id="tabL" aria-label="分頁左移">←</button><button class="btn" id="tabR" aria-label="分頁右移">→</button></div></div>
   <div class="row"><label for="ttl">標題</label><input type="text" id="ttl" list="ttlL" autocomplete="off"><datalist id="ttlL"></datalist></div>
   <div id="fields"></div>
   <button class="add" id="add">＋ 新增欄位</button>
   <div class="row" style="margin-top:12px"><span class="lbl" id="progLbl"></span><input type="text" class="name" id="progName" placeholder="進度欄位名稱" hidden><div class="seg" id="prog"></div></div>
-  <button class="btn" id="reset" hidden style="width:100%;margin-top:12px">恢復預設欄位</button>
-  <p class="meta" id="hint" hidden style="margin:10px 0 0">拖曳 ☰ 調整順序。欄位留空不會出現在水印上。「拍攝時間」自動帶入。</p>
+  <div class="edonly" style="margin-top:12px;display:grid;gap:8px">
+    <button class="btn" id="reset" style="width:100%">恢復這頁的預設欄位</button>
+    <button class="btn" id="delTab" style="width:100%;color:var(--red)">刪除這個分頁</button>
+  </div>
+  <p class="meta edonly" style="margin:10px 0 0">拖曳 ☰ 調整順序；進度三個按鈕的文字也可以直接改。欄位留空不會出現在水印上。</p>
 </div>
 
 <div class="meta" id="warn" hidden></div>
@@ -75,32 +89,48 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 <input id="lib" type="file" accept="image/*" multiple>
 
 <strong id="count" style="display:block;margin:22px 0 10px">成果</strong>
-<div class="acts" id="acts" hidden><button class="btn" id="redo">套用新欄位</button><button class="btn" id="clr">全部移除</button><button class="btn pri" id="all">全部儲存</button></div>
+<div class="acts" id="acts" hidden><button class="btn" id="redo">套用目前欄位</button><button class="btn" id="clr">全部移除</button><button class="btn pri" id="all">全部儲存</button></div>
 <div id="results"></div>
 </main>
 
 <script>
 {
-const PROG=['清洗前','清洗中','清洗後'];
+const mkTab=(id,name,work,p)=>({id,name,title:'大同',progName:'施工進度',prog:0,progOpts:[p+'前',p+'中',p+'後'],
+  fields:[{id:id*10+1,name:'施工區域',value:''},{id:id*10+2,name:'施工內容',value:work},{id:id*10+3,name:'拍攝時間',auto:'date'}]});
+const PRESET={1:()=>mkTab(1,'清洗','模組清洗','清洗'),2:()=>mkTab(2,'巡檢','設備巡檢','巡檢'),3:()=>mkTab(3,'除草','除草','除草')};
+const DEF={tabs:[PRESET[1](),PRESET[2](),PRESET[3]()],cur:1,titles:['大同'],hist:{}};
 let uid=Date.now();
-const DEF={title:'大同',titles:['大同'],progName:'施工進度',prog:0,hist:{},
-  fields:[{id:1,name:'施工區域',value:''},{id:2,name:'施工內容',value:'模組清洗'},{id:3,name:'拍攝時間',auto:'date'}]};
 let st=structuredClone(DEF);
-try{const s=JSON.parse(localStorage.getItem('wmcam4')||'null');if(s)st={...DEF,...s}}catch(e){}
-try{const o=JSON.parse(localStorage.getItem('wmcam3')||'null');if(o&&!localStorage.getItem('wmcam4')){st.title=o.title??st.title;st.titles=o.titles||st.titles;st.fields[0].value=o.site||'';st.fields[1].value=o.work??'模組清洗';st.prog=o.prog||0;st.hist={'施工區域':o.sites||[],'施工內容':o.works||[]}}}catch(e){}
-const persist=()=>{try{localStorage.setItem('wmcam4',JSON.stringify(st))}catch(e){}};
+try{const s=JSON.parse(localStorage.getItem('wmcam5')||'null');if(s&&s.tabs&&s.tabs.length)st={...DEF,...s};
+  else{const o=JSON.parse(localStorage.getItem('wmcam4')||'null');if(o&&o.fields){const t=st.tabs[0];t.title=o.title??t.title;t.fields=o.fields;t.progName=o.progName||t.progName;t.prog=o.prog||0;st.titles=o.titles||st.titles;st.hist=o.hist||{}}}}catch(e){}
+const persist=()=>{try{localStorage.setItem('wmcam5',JSON.stringify(st))}catch(e){}};
 const $=id=>document.getElementById(id);
+const T=()=>st.tabs.find(t=>t.id===st.cur)||st.tabs[0];
 const items=[];
 let editing=false;
 
 const today=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())}`};
 const opts=(dl,arr)=>{dl.innerHTML='';(arr||[]).forEach(t=>{const o=document.createElement('option');o.value=t;dl.appendChild(o)})};
 const warn=m=>{const n=$('warn');n.textContent=m;n.hidden=false;clearTimeout(warn.t);warn.t=setTimeout(()=>n.hidden=true,3000)};
+const twoTap=(b,label,confirmText,fn)=>{if(!b.dataset.c){b.dataset.c=1;b.textContent=confirmText;b.classList.add('warn');b._t=setTimeout(()=>{delete b.dataset.c;b.textContent=label;b.classList.remove('warn')},3000);return}
+  clearTimeout(b._t);delete b.dataset.c;b.textContent=label;b.classList.remove('warn');fn()};
 
+function renderTabs(){
+  const box=$('tabs');box.innerHTML='';
+  st.tabs.forEach(t=>{const b=document.createElement('button');b.className='tab'+(t.id===T().id?' on':'');b.textContent=t.name||'未命名';
+    b.onclick=()=>{st.cur=t.id;persist();render()};
+    let lp=null;b.addEventListener('pointerdown',()=>{lp=setTimeout(()=>{st.cur=t.id;editing=true;persist();render()},600)});
+    ['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>clearTimeout(lp)));
+    box.appendChild(b)});
+  const a=document.createElement('button');a.className='tab add-tab';a.textContent='＋';a.setAttribute('aria-label','新增分頁');
+  a.onclick=()=>{const n=structuredClone(T());n.id=++uid;n.name=n.name+' 複製';n.fields.forEach(f=>f.id=++uid);st.tabs.push(n);st.cur=n.id;editing=true;persist();render();$('tabName').select()};
+  box.appendChild(a);
+  box.querySelector('.on')?.scrollIntoView({inline:'nearest',block:'nearest'});
+}
 function renderFields(){
-  const box=$('fields');box.innerHTML='';
-  st.fields.forEach(f=>{
-    const row=document.createElement('div');row.className='f';row.dataset.id=f.id;
+  const t=T(),box=$('fields');box.innerHTML='';
+  t.fields.forEach(f=>{
+    const row=document.createElement('div');row.className='f';
     const grip=document.createElement('div');grip.className='grip';grip.textContent='☰';grip.setAttribute('aria-label','拖曳排序');
     const body=document.createElement('div');body.className='body';
     if(editing){const n=document.createElement('input');n.type='text';n.className='name';n.value=f.name;n.placeholder='欄位名稱';n.oninput=e=>{f.name=e.target.value;persist()};body.appendChild(n)}
@@ -112,36 +142,47 @@ function renderFields(){
     body.appendChild(v);
     const x=document.createElement('button');x.className='x';x.textContent='✕';x.setAttribute('aria-label','刪除欄位');
     x.onclick=()=>{if(!x.dataset.c){x.dataset.c=1;x.textContent='?';setTimeout(()=>{delete x.dataset.c;x.textContent='✕'},2500);return}
-      st.fields=st.fields.filter(z=>z!==f);persist();renderFields()};
+      t.fields=t.fields.filter(z=>z!==f);persist();renderFields()};
     row.append(grip,body,x);box.appendChild(row);
     grip.addEventListener('pointerdown',e=>startDrag(e,row));
   });
 }
-function render(){
-  $('form').classList.toggle('editing',editing);
-  $('edit').textContent=editing?'完成':'編輯欄位';$('edit').classList.toggle('pri',editing);
-  $('hint').hidden=!editing;$('reset').hidden=!editing;
-  $('ttl').value=st.title;opts($('ttlL'),st.titles);
-  $('progLbl').textContent=st.progName||'進度';$('progLbl').hidden=editing;
-  $('progName').hidden=!editing;$('progName').value=st.progName;
-  $('prog').innerHTML='';
-  PROG.forEach((t,k)=>{const b=document.createElement('button');b.textContent=t;b.className=k==st.prog?'on':'';b.onclick=()=>{st.prog=k;persist();render()};$('prog').appendChild(b)});
-  renderFields();
+function renderProg(){
+  const t=T(),box=$('prog');box.innerHTML='';
+  t.progOpts.forEach((p,k)=>{
+    if(editing){const i=document.createElement('input');i.type='text';i.value=p;i.className='segin'+(k==t.prog?' on':'');i.setAttribute('aria-label','進度選項'+(k+1));
+      i.oninput=e=>{t.progOpts[k]=e.target.value;persist()};box.appendChild(i)}
+    else{const b=document.createElement('button');b.textContent=p||'—';b.className=k==t.prog?'on':'';b.onclick=()=>{t.prog=k;persist();renderProg()};box.appendChild(b)}
+  });
 }
-let rt=null;
-$('reset').onclick=()=>{const b=$('reset');
-  if(!rt){b.textContent='再按一次確認（欄位會回到最初設定）';b.classList.add('warn');rt=setTimeout(()=>{rt=null;b.textContent='恢復預設欄位';b.classList.remove('warn')},3000);return}
-  clearTimeout(rt);rt=null;b.textContent='恢復預設欄位';b.classList.remove('warn');
-  const d=structuredClone(DEF);st.title=d.title;st.progName=d.progName;st.prog=d.prog;st.fields=d.fields;persist();render();warn('已恢復預設欄位')};
+function render(){
+  const t=T();
+  $('form').classList.toggle('editing',editing);
+  $('edit').textContent=editing?'完成':'編輯';$('edit').classList.toggle('pri',editing);
+  $('formHead').textContent=editing?`編輯「${t.name||'未命名'}」分頁`:'水印內容';
+  $('tabName').value=t.name;
+  $('ttl').value=t.title;opts($('ttlL'),st.titles);
+  $('progLbl').textContent=t.progName||'進度';$('progLbl').hidden=editing;
+  $('progName').hidden=!editing;$('progName').value=t.progName;
+  renderTabs();renderFields();renderProg();
+}
 $('edit').onclick=()=>{editing=!editing;render()};
-$('ttl').oninput=e=>{st.title=e.target.value;persist()};
-$('progName').oninput=e=>{st.progName=e.target.value;persist()};
-$('add').onclick=()=>{st.fields.push({id:++uid,name:'',value:''});persist();renderFields();const ins=$('fields').querySelectorAll('input.name');ins[ins.length-1]?.focus()};
+$('tabName').oninput=e=>{T().name=e.target.value;persist();renderTabs();$('formHead').textContent=`編輯「${e.target.value||'未命名'}」分頁`};
+const moveTab=d=>{const i=st.tabs.indexOf(T()),j=i+d;if(j<0||j>=st.tabs.length)return;[st.tabs[i],st.tabs[j]]=[st.tabs[j],st.tabs[i]];persist();renderTabs()};
+$('tabL').onclick=()=>moveTab(-1);$('tabR').onclick=()=>moveTab(1);
+$('ttl').oninput=e=>{T().title=e.target.value;persist()};
+$('progName').oninput=e=>{T().progName=e.target.value;persist()};
+$('add').onclick=()=>{T().fields.push({id:++uid,name:'',value:''});persist();renderFields();const ins=$('fields').querySelectorAll('input.name');ins[ins.length-1]?.focus()};
+$('reset').onclick=()=>twoTap($('reset'),'恢復這頁的預設欄位','再按一次確認',()=>{
+  const t=T(),base=PRESET[t.id]?PRESET[t.id]():mkTab(t.id,t.name,'','施工');
+  Object.assign(t,{title:base.title,progName:base.progName,progOpts:base.progOpts,prog:0,fields:base.fields});if(!PRESET[t.id])t.fields.forEach(f=>f.id=++uid);
+  persist();render();warn('已恢復預設欄位')});
+$('delTab').onclick=()=>{if(st.tabs.length<=1){warn('至少要保留一個分頁');return}
+  twoTap($('delTab'),'刪除這個分頁','再按一次確認刪除',()=>{const i=st.tabs.indexOf(T());st.tabs.splice(i,1);st.cur=st.tabs[Math.max(0,i-1)].id;editing=false;persist();render()})};
 
-// drag to reorder
 function startDrag(e,row){
   e.preventDefault();
-  const box=$('fields'),rows=[...box.children],start=e.clientY,h=row.getBoundingClientRect().height+12;
+  const t=T(),box=$('fields'),rows=[...box.children],start=e.clientY,h=row.getBoundingClientRect().height+12;
   let idx=rows.indexOf(row),cur=idx;row.classList.add('drag');
   const move=ev=>{
     const dy=ev.clientY-start;row.style.transform=`translateY(${dy}px)`;
@@ -151,21 +192,21 @@ function startDrag(e,row){
   const up=()=>{
     removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);
     rows.forEach(r=>{r.style.transform='';r.style.transition=''});row.classList.remove('drag');
-    if(cur!==idx){const [f]=st.fields.splice(idx,1);st.fields.splice(cur,0,f);persist()}
+    if(cur!==idx){const [f]=t.fields.splice(idx,1);t.fields.splice(cur,0,f);persist()}
     renderFields();
   };
   addEventListener('pointermove',move);addEventListener('pointerup',up);addEventListener('pointercancel',up);
 }
 
 const remember=()=>{
-  const add=(arr,v)=>{v=(v||'').trim();if(!v)return arr||[];return [v,...(arr||[]).filter(x=>x!==v)].slice(0,8)};
-  st.titles=add(st.titles,st.title);
-  st.fields.forEach(f=>{if(!f.auto&&f.name)st.hist[f.name]=add(st.hist[f.name],f.value)});
+  const t=T(),add=(arr,v)=>{v=(v||'').trim();if(!v)return arr||[];return [v,...(arr||[]).filter(x=>x!==v)].slice(0,8)};
+  st.titles=add(st.titles,t.title);
+  t.fields.forEach(f=>{if(!f.auto&&f.name)st.hist[f.name]=add(st.hist[f.name],f.value)});
   persist();opts($('ttlL'),st.titles);
 };
-const snapshot=date=>({title:(st.title||'').trim(),date,
-  rows:st.fields.map(f=>[(f.name||'').trim(),f.auto==='date'?date:(f.value||'').trim()]).filter(r=>r[1]),
-  prog:[(st.progName||'').trim(),PROG[st.prog]]});
+const snapshot=date=>{const t=T();return {tab:t.name,title:(t.title||'').trim(),date,
+  rows:t.fields.map(f=>[(f.name||'').trim(),f.auto==='date'?date:(f.value||'').trim()]).filter(r=>r[1]),
+  prog:[(t.progName||'').trim(),(t.progOpts[t.prog]||'').trim()]}};
 
 const FONT='"PingFang TC","Noto Sans TC",sans-serif';
 const spaced=t=>[...t].join(' ');
@@ -177,30 +218,33 @@ async function stamp(file,f){
   g.drawImage(i,0,0,W,H);URL.revokeObjectURL(u);
   const s=Math.min(W,H)/1108,Y=v=>H-(1108-v)*s,X=v=>v*s;
   const body=`500 ${X(26)}px ${FONT}`,head=`700 ${X(30)}px ${FONT}`;
-  const all=[...f.rows,f.prog];
+  const hasP=!!f.prog[1],all=hasP?[...f.rows,f.prog]:f.rows;
   g.font=body;
-  const lw=Math.max(...all.map(r=>g.measureText(r[0]?spaced(r[0])+':':'').width));
-  const gap=X(14),vx=X(45)+(lw?lw+gap:0);
-  const vw=Math.max(...all.map(r=>g.measureText(r[1]).width));
+  const lw=Math.max(0,...all.map(r=>g.measureText(r[0]?spaced(r[0])+':':'').width));
+  const vx=X(45)+(lw?lw+X(14):0);
+  const vw=Math.max(0,...all.map(r=>g.measureText(r[1]).width));
   g.font=head;const tw=f.title?g.measureText(f.title).width+X(140):0;
   const x0=X(28),x1=x0+Math.max(X(506),vx-x0+vw+X(30),tw);
-  const n=f.rows.length,fb=1008,mid=n?fb-(59+(n-1)*38.5):fb,hb=f.title?mid-63:mid;
-  const top=Y(hb),r=X(12);
-  g.save();g.beginPath();g.roundRect?g.roundRect(x0,top,x1-x0,Y(1080)-top,r):g.rect(x0,top,x1-x0,Y(1080)-top);g.clip();
+  const bot=1080,fb=hasP?1008:1080;
+  const n=f.rows.length,mid=n?fb-(59+(n-1)*38.5):fb,hb=f.title?mid-63:mid;
+  if(!f.title&&!n&&!hasP)return new Promise(ok=>c.toBlob(b=>ok({url:URL.createObjectURL(b),blob:b}),'image/jpeg',.92));
+  const top=Y(hb),r=X(12),B=Y(bot);
+  g.save();g.beginPath();g.roundRect?g.roundRect(x0,top,x1-x0,B-top,r):g.rect(x0,top,x1-x0,B-top);g.clip();
   if(f.title){g.fillStyle='rgba(15,65,175,.88)';g.fillRect(x0,Y(hb),x1-x0,Y(mid)-Y(hb))}
   if(n){g.fillStyle='rgba(235,235,240,.47)';g.fillRect(x0,Y(mid),x1-x0,Y(fb)-Y(mid))}
-  g.fillStyle='rgba(35,85,190,.84)';g.fillRect(x0,Y(fb),x1-x0,Y(1080)-Y(fb));g.restore();
+  if(hasP){g.fillStyle='rgba(35,85,190,.84)';g.fillRect(x0,Y(fb),x1-x0,B-Y(fb))}
+  g.restore();
   g.textBaseline='middle';
   if(f.title){g.fillStyle='#ffc800';g.beginPath();g.arc(x0+X(33),Y(hb+32),X(9),0,7);g.fill();
     g.fillStyle='#fff';g.textAlign='center';g.font=head;g.fillText(f.title,(x0+x1)/2,Y(hb+32))}
   g.textAlign='left';g.font=body;
   const line=([a,b],y,col)=>{g.fillStyle=col;if(a)g.fillText(spaced(a)+':',X(45),y);g.fillText(b,vx,y)};
   f.rows.forEach((rw,j)=>line(rw,Y(mid+28+j*38.5),'#0a0a0a'));
-  line(f.prog,Y(1047),'#fff');
+  if(hasP)line(f.prog,Y(1047),'#fff');
   return new Promise(ok=>c.toBlob(b=>ok({url:URL.createObjectURL(b),blob:b}),'image/jpeg',.92));
 }
 
-const nameOf=it=>{const r=it.f.rows.find(x=>!x[0].includes('時間'))||['',''];return `${r[1]||'照片'}_${it.f.prog[1]}_${it.f.date.replace(/\./g,'')}_${items.indexOf(it)+1}.jpg`.replace(/[\\/:*?"<>|]/g,'_')};
+const nameOf=it=>{const r=it.f.rows.find(x=>!x[0].includes('時間'))||['',''];return [r[1]||it.f.tab||'照片',it.f.prog[1],it.f.date.replace(/\./g,''),items.indexOf(it)+1].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g,'_')+'.jpg'};
 async function shareFiles(list){
   const files=list.map(it=>new File([it.blob],nameOf(it),{type:'image/jpeg'}));
   if(navigator.canShare&&navigator.canShare({files})){
@@ -217,12 +261,11 @@ function show(){
   items.slice().reverse().forEach(it=>{
     const d=document.createElement('div');d.className='card out';
     const im=document.createElement('img');im.src=it.url;im.alt='加好水印的照片';
-    const p=document.createElement('p');p.textContent=[...it.f.rows.filter(r=>!r[0].includes('時間')).map(r=>r[1]),it.f.prog[1]].join('・');
+    const p=document.createElement('p');p.textContent=[it.f.tab,...it.f.rows.filter(r=>!r[0].includes('時間')).map(r=>r[1]),it.f.prog[1]].filter(Boolean).join('・');
     const b=document.createElement('button');b.className='btn';b.textContent=it.saved?'已儲存 ✓':'儲存照片';
     b.onclick=async()=>{b.disabled=true;await shareFiles([it]);b.disabled=false;b.textContent=it.saved?'已儲存 ✓':'儲存照片'};
     const x=document.createElement('button');x.className='btn';x.textContent='刪除';
-    let t=null;x.onclick=()=>{if(!t){x.textContent='確認刪除';x.classList.add('warn');t=setTimeout(()=>{t=null;x.textContent='刪除';x.classList.remove('warn')},3000);return}
-      clearTimeout(t);URL.revokeObjectURL(it.url);items.splice(items.indexOf(it),1);show()};
+    x.onclick=()=>twoTap(x,'刪除','確認刪除',()=>{URL.revokeObjectURL(it.url);items.splice(items.indexOf(it),1);show()});
     const r=document.createElement('div');r.className='prow';r.append(b,x);
     d.append(im,p,r);box.appendChild(d);
   });
@@ -239,14 +282,11 @@ $('cam').onchange=e=>{add([...e.target.files]);e.target.value=''};
 $('lib').onchange=e=>{add([...e.target.files]);e.target.value=''};
 $('redo').onclick=async()=>{remember();for(const it of items){URL.revokeObjectURL(it.url);it.f=snapshot(it.f.date);const r=await stamp(it.file,it.f);it.url=r.url;it.blob=r.blob;it.saved=false}show()};
 $('all').onclick=async()=>{const todo=items.filter(it=>!it.saved);if(!todo.length){warn('全部都已儲存過');return}if(await shareFiles(todo))show()};
-let ct=null;
-$('clr').onclick=()=>{const b=$('clr');
-  if(!ct){b.textContent='再按一次確認';b.classList.add('warn');ct=setTimeout(()=>{ct=null;b.textContent='全部移除';b.classList.remove('warn')},3000);return}
-  clearTimeout(ct);ct=null;b.textContent='全部移除';b.classList.remove('warn');
-  items.forEach(it=>URL.revokeObjectURL(it.url));items.length=0;show()};
+$('clr').onclick=()=>twoTap($('clr'),'全部移除','再按一次確認',()=>{items.forEach(it=>URL.revokeObjectURL(it.url));items.length=0;show()});
 
 render();show();
 }
 </script>
+
 </body>
 </html>
