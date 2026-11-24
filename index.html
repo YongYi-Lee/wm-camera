@@ -99,7 +99,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 const mkTab=(id,name,work,p)=>({id,name,title:'',progName:'施工進度',prog:0,progOpts:[p+'前',p+'中',p+'後'],
   fields:[{id:id*10+1,name:'施工區域',value:''},{id:id*10+2,name:'施工內容',value:''},{id:id*10+3,name:'拍攝時間',auto:'date'}]});
 const PRESET={1:()=>mkTab(1,'清洗','模組清洗','清洗'),
-  2:()=>({...mkTab(2,'巡檢','','巡檢'),titleName:'案場',progOpts:[],fields:[{id:27,name:'工程編號',value:''},{id:28,name:'工程名稱',value:''},{id:21,name:'施工內容',value:''},{id:22,name:'拍攝時間',auto:'date'},{id:23,name:'施工項目',value:''},{id:26,name:'設備名稱',value:''},{id:25,name:'施工進度',value:''},{id:24,name:'施工單位',value:''}]}),3:()=>mkTab(3,'除草','除草','除草')};
+  2:()=>({...mkTab(2,'巡檢','','巡檢'),titleName:'案場',progOpts:[],fields:[{id:27,name:'工程編號',value:''},{id:28,name:'工程名稱',value:''},{id:21,name:'施工內容',value:''},{id:22,name:'拍攝時間',auto:'date'},{id:23,name:'施工項目',value:''},{id:26,name:'設備名稱',value:''},{id:25,name:'施工進度',value:''},{id:24,name:'施工單位',value:''}]}),3:()=>mkTab(3,'除草','','施工')};
 const DEF={tabs:[PRESET[1](),PRESET[2](),PRESET[3]()],cur:1,titles:[],hist:{}};
 let uid=Date.now();
 let st=structuredClone(DEF);
