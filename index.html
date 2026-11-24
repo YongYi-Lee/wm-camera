@@ -47,6 +47,7 @@ details summary{cursor:pointer;min-height:44px;display:flex;align-items:center;f
 <h1><i></i>施工水印相機 </h1>
 
 <div class="card">
+  <div class="row"><label for="ttl">標題（公司名稱）</label><input type="text" id="ttl" list="ttlL" placeholder="例如：大同" autocomplete="off"><datalist id="ttlL"></datalist></div>
   <div class="row"><label for="site">施工區域</label><input type="text" id="site" list="siteL" placeholder="例如：羅娜國小" autocomplete="off"><datalist id="siteL"></datalist></div>
   <div class="row"><label for="work">施工內容</label><input type="text" id="work" list="workL" placeholder="例如：模組清洗" autocomplete="off"><datalist id="workL"></datalist></div>
   <div class="row"><label>施工進度</label><div class="seg" id="prog"></div></div>
@@ -68,29 +69,30 @@ details summary{cursor:pointer;min-height:44px;display:flex;align-items:center;f
 <script>
 {
 const PROG=['清洗前','清洗中','清洗後'];
-const DEF={title:'大同',site:'',work:'模組清洗',prog:0,sites:[],works:['模組清洗']};
+const DEF={title:'大同',site:'',work:'模組清洗',prog:0,sites:[],works:['模組清洗'],titles:['大同']};
 let st={...DEF};
-try{const s=JSON.parse(localStorage.getItem('wmcam2')||'null');if(s)st={...DEF,...s}}catch(e){}
-const persist=()=>{try{localStorage.setItem('wmcam2',JSON.stringify(st))}catch(e){}};
+try{const s=JSON.parse(localStorage.getItem('wmcam3')||'null');if(s)st={...DEF,...s}}catch(e){}
+const persist=()=>{try{localStorage.setItem('wmcam3',JSON.stringify(st))}catch(e){}};
 const $=id=>document.getElementById(id);
 const items=[];// {file, url, fields}
 
 const today=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())}`};
 const opts=(dl,arr)=>{dl.innerHTML='';arr.forEach(t=>{const o=document.createElement('option');o.value=t;dl.appendChild(o)})};
 function render(){
-  $('site').value=st.site;$('work').value=st.work;
-  opts($('siteL'),st.sites);opts($('workL'),st.works);
+  $('ttl').value=st.title;$('site').value=st.site;$('work').value=st.work;
+  opts($('ttlL'),st.titles);opts($('siteL'),st.sites);opts($('workL'),st.works);
   $('prog').innerHTML='';
   PROG.forEach((t,k)=>{const b=document.createElement('button');b.textContent=t;b.className=k==st.prog?'on':'';b.onclick=()=>{st.prog=k;persist();render()};$('prog').appendChild(b)});
   $('dateLine').textContent=`拍攝時間自動帶入：${today()}`;
 }
+$('ttl').oninput=e=>{st.title=e.target.value;persist()};
 $('site').oninput=e=>{st.site=e.target.value;persist()};
 $('work').oninput=e=>{st.work=e.target.value;persist()};
 const remember=(k,v)=>{v=v.trim();if(!v)return;st[k]=[v,...st[k].filter(x=>x!==v)].slice(0,8)};
-const ready=()=>{if(!st.site.trim()||!st.work.trim()){alertBox('請先填寫施工區域和施工內容');return false}remember('sites',st.site);remember('works',st.work);persist();opts($('siteL'),st.sites);opts($('workL'),st.works);return true};
+const ready=()=>{if(!st.title.trim()||!st.site.trim()||!st.work.trim()){alertBox('請先填寫標題、施工區域和施工內容');return false}remember('titles',st.title);remember('sites',st.site);remember('works',st.work);persist();opts($('ttlL'),st.titles);opts($('siteL'),st.sites);opts($('workL'),st.works);return true};
 const alertBox=m=>{const n=$('warn');n.textContent=m;n.hidden=false;setTimeout(()=>n.hidden=true,3000)};
 
-const cur=()=>({title:st.title,site:st.site.trim(),work:st.work.trim(),date:today(),prog:PROG[st.prog]});
+const cur=()=>({title:st.title.trim(),site:st.site.trim(),work:st.work.trim(),date:today(),prog:PROG[st.prog]});
 const F='"PingFang TC","Noto Sans TC",sans-serif';
 
 function loadImg(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file);const i=new Image();i.onload=()=>ok({i,u});i.onerror=no;i.src=u})}
@@ -140,7 +142,7 @@ async function add(files){
   for(const file of files){try{const r=await stamp(file,f);items.push({file,url:r.url,blob:r.blob,fields:f})}catch(e){}}
   show();
 }
-document.querySelectorAll('.shoot,.alt').forEach(l=>l.addEventListener('click',e=>{if(!st.site.trim()||!st.work.trim()){e.preventDefault();alertBox('請先填寫施工區域和施工內容')}}));
+document.querySelectorAll('.shoot,.alt').forEach(l=>l.addEventListener('click',e=>{if(!st.title.trim()||!st.site.trim()||!st.work.trim()){e.preventDefault();alertBox('請先填寫標題、施工區域和施工內容')}}));
 const fname=it=>`${it.fields.site}_${it.fields.prog}_${it.fields.date.replace(/\./g,'')}_${items.indexOf(it)+1}.jpg`;
 const toFile=it=>new File([it.blob],fname(it),{type:'image/jpeg'});
 async function shareFiles(list){
