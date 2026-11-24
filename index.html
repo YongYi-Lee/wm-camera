@@ -74,7 +74,8 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
   <div class="row"><label for="ttl">標題</label><input type="text" id="ttl" list="ttlL" autocomplete="off"><datalist id="ttlL"></datalist></div>
   <div id="fields"></div>
   <button class="add" id="add">＋ 新增欄位</button>
-  <div class="row" style="margin-top:12px"><span class="lbl" id="progLbl"></span><input type="text" class="name" id="progName" placeholder="進度欄位名稱" hidden><div class="seg" id="prog"></div></div>
+  <div class="row" id="progRow" style="margin-top:12px"><span class="lbl" id="progLbl"></span><input type="text" class="name" id="progName" placeholder="進度欄位名稱" hidden><div class="seg" id="prog"></div><button class="btn edonly" id="progDel" style="width:100%;margin-top:8px">移除進度按鈕</button></div>
+  <button class="add" id="progAdd">＋ 加上進度按鈕</button>
   <div class="edonly" style="margin-top:12px;display:grid;gap:8px">
     <button class="btn" id="reset" style="width:100%">恢復這頁的預設欄位</button>
     <button class="btn" id="delTab" style="width:100%;color:var(--red)">刪除這個分頁</button>
@@ -98,7 +99,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 const mkTab=(id,name,work,p)=>({id,name,title:'',progName:'施工進度',prog:0,progOpts:[p+'前',p+'中',p+'後'],
   fields:[{id:id*10+1,name:'施工區域',value:''},{id:id*10+2,name:'施工內容',value:''},{id:id*10+3,name:'拍攝時間',auto:'date'}]});
 const PRESET={1:()=>mkTab(1,'清洗','模組清洗','清洗'),
-  2:()=>({...mkTab(2,'巡檢','','巡檢'),fields:[{id:21,name:'施工內容',value:''},{id:22,name:'拍攝時間',auto:'date'},{id:23,name:'施工項目',value:''},{id:24,name:'施工單位',value:''}]}),3:()=>mkTab(3,'除草','除草','除草')};
+  2:()=>({...mkTab(2,'巡檢','','巡檢'),progOpts:[],fields:[{id:21,name:'施工內容',value:''},{id:22,name:'拍攝時間',auto:'date'},{id:23,name:'施工項目',value:''},{id:24,name:'施工單位',value:''}]}),3:()=>mkTab(3,'除草','除草','除草')};
 const DEF={tabs:[PRESET[1](),PRESET[2](),PRESET[3]()],cur:1,titles:[],hist:{}};
 let uid=Date.now();
 let st=structuredClone(DEF);
@@ -157,7 +158,8 @@ function renderProg(){
   });
 }
 function render(){
-  const t=T();
+  const t=T(),hp=t.progOpts.length>0;
+  $('progRow').hidden=!hp;$('progAdd').hidden=hp;
   $('form').classList.toggle('editing',editing);
   $('edit').textContent=editing?'完成':'編輯';$('edit').classList.toggle('pri',editing);
   $('formHead').textContent=editing?`編輯「${t.name||'未命名'}」分頁`:'水印內容';
@@ -172,6 +174,8 @@ $('tabName').oninput=e=>{T().name=e.target.value;persist();renderTabs();$('formH
 const moveTab=d=>{const i=st.tabs.indexOf(T()),j=i+d;if(j<0||j>=st.tabs.length)return;[st.tabs[i],st.tabs[j]]=[st.tabs[j],st.tabs[i]];persist();renderTabs()};
 $('tabL').onclick=()=>moveTab(-1);$('tabR').onclick=()=>moveTab(1);
 $('ttl').oninput=e=>{T().title=e.target.value;persist()};
+$('progAdd').onclick=()=>{const t=T();t.progOpts=['施工前','施工中','施工後'];t.prog=0;t.progName=t.progName||'施工進度';persist();render()};
+$('progDel').onclick=()=>twoTap($('progDel'),'移除進度按鈕','再按一次確認',()=>{T().progOpts=[];persist();render()});
 $('progName').oninput=e=>{T().progName=e.target.value;persist()};
 $('add').onclick=()=>{T().fields.push({id:++uid,name:'',value:''});persist();renderFields();const ins=$('fields').querySelectorAll('input.name');ins[ins.length-1]?.focus()};
 $('reset').onclick=()=>twoTap($('reset'),'恢復這頁的預設欄位','再按一次確認',()=>{
