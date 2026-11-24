@@ -64,6 +64,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
   <div id="fields"></div>
   <button class="add" id="add">＋ 新增欄位</button>
   <div class="row" style="margin-top:12px"><span class="lbl" id="progLbl"></span><input type="text" class="name" id="progName" placeholder="進度欄位名稱" hidden><div class="seg" id="prog"></div></div>
+  <button class="btn" id="reset" hidden style="width:100%;margin-top:12px">恢復預設欄位</button>
   <p class="meta" id="hint" hidden style="margin:10px 0 0">拖曳 ☰ 調整順序。欄位留空不會出現在水印上。「拍攝時間」自動帶入。</p>
 </div>
 
@@ -119,7 +120,7 @@ function renderFields(){
 function render(){
   $('form').classList.toggle('editing',editing);
   $('edit').textContent=editing?'完成':'編輯欄位';$('edit').classList.toggle('pri',editing);
-  $('hint').hidden=!editing;
+  $('hint').hidden=!editing;$('reset').hidden=!editing;
   $('ttl').value=st.title;opts($('ttlL'),st.titles);
   $('progLbl').textContent=st.progName||'進度';$('progLbl').hidden=editing;
   $('progName').hidden=!editing;$('progName').value=st.progName;
@@ -127,6 +128,11 @@ function render(){
   PROG.forEach((t,k)=>{const b=document.createElement('button');b.textContent=t;b.className=k==st.prog?'on':'';b.onclick=()=>{st.prog=k;persist();render()};$('prog').appendChild(b)});
   renderFields();
 }
+let rt=null;
+$('reset').onclick=()=>{const b=$('reset');
+  if(!rt){b.textContent='再按一次確認（欄位會回到最初設定）';b.classList.add('warn');rt=setTimeout(()=>{rt=null;b.textContent='恢復預設欄位';b.classList.remove('warn')},3000);return}
+  clearTimeout(rt);rt=null;b.textContent='恢復預設欄位';b.classList.remove('warn');
+  const d=structuredClone(DEF);st.title=d.title;st.progName=d.progName;st.prog=d.prog;st.fields=d.fields;persist();render();warn('已恢復預設欄位')};
 $('edit').onclick=()=>{editing=!editing;render()};
 $('ttl').oninput=e=>{st.title=e.target.value;persist()};
 $('progName').oninput=e=>{st.progName=e.target.value;persist()};
