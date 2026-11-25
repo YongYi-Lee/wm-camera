@@ -17,6 +17,7 @@ h1 i{width:14px;height:14px;border-radius:50%;background:var(--yel);display:inli
 p{margin:0 0 10px}
 .go{width:100%;min-height:72px;border:0;border-radius:14px;background:var(--blue);color:#fff;font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
 .go:disabled{opacity:.5;cursor:default}
+.alt{width:100%;min-height:48px;margin-top:10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:17px;font-family:inherit;cursor:pointer}
 .mute{color:var(--mute);font-size:16px}
 progress{width:100%;height:14px;margin:14px 0 6px}
 #status{font-weight:700}
@@ -42,6 +43,8 @@ progress{width:100%;height:14px;margin:14px 0 6px}
   <p class="mute">認不出來的照片會放進「無法辨識」，請自己看一下再搬。照片只在這台電腦上處理，不會上傳。</p>
   <p id="unsup" class="mute" style="color:var(--red)" hidden>這個瀏覽器不支援選資料夾，請改用電腦版的 Chrome 或 Edge 開啟這個網頁。</p>
   <button class="go" id="go" disabled>辨識模型載入中…</button>
+  <button class="alt" id="pick" hidden>選別的資料夾</button>
+  <p class="mute" style="margin-top:10px">小技巧：固定用一個資料夾（例如桌面的「待分類」）放新照片，每次只要按上面的大按鈕。Chrome 問權限時選「每次造訪都允許」，之後就不會再問。</p>
   <progress id="bar" value="0" max="1" hidden></progress>
   <div id="status"></div>
   <div class="sum" id="sum" hidden></div>
@@ -167,14 +170,35 @@ async function sortDir(dir,onEach){
 function showSum(c){const s=$('sum');s.innerHTML='';s.hidden=false;
   for(const [k,v] of Object.entries(c)){const d=document.createElement('div');if(k===UNKNOWN)d.className='unk';d.innerHTML=`<b>${v}</b>${k}`;s.appendChild(d)}}
 
-const go=$('go'),status=$('status');
-const label='選擇資料夾並開始分類';
-if(!window.showDirectoryPicker){$('unsup').hidden=false;go.textContent='請改用 Chrome 或 Edge'}
-else ready.then(()=>{go.disabled=false;go.textContent=label}).catch(()=>{go.textContent='模型載入失敗，請重新整理';status.className='err'});
+// 記住上次的資料夾（存在瀏覽器 IndexedDB），下次直接用；Chrome 會提供「每次造訪都允許」
+const idb=(mode,fn)=>new Promise((ok,no)=>{const r=indexedDB.open('wmsort',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');
+  r.onerror=()=>no(r.error);r.onsuccess=()=>{const t=r.result.transaction('kv',mode),q=fn(t.objectStore('kv'));t.oncomplete=()=>ok(q&&q.result);t.onerror=()=>no(t.error)}});
+const saveDir=h=>idb('readwrite',s=>s.put(h,'dir')).catch(()=>{});
+const loadDir=()=>idb('readonly',s=>s.get('dir')).catch(()=>null);
+let lastDir=null;
 
+const go=$('go'),pickBtn=$('pick'),status=$('status');
+const label=()=>lastDir?`分類「${lastDir.name}」資料夾`:'選擇資料夾並開始分類';
+const idle=()=>{go.disabled=false;go.textContent=label();pickBtn.hidden=!lastDir;pickBtn.disabled=false};
+if(!window.showDirectoryPicker){$('unsup').hidden=false;go.textContent='請改用 Chrome 或 Edge'}
+else Promise.all([ready,loadDir()]).then(([,d])=>{lastDir=d||null;idle()}).catch(()=>{go.textContent='模型載入失敗，請重新整理';status.className='err'});
+
+async function chooseDir(){try{const d=await showDirectoryPicker({id:'wmsort',mode:'readwrite'});lastDir=d;saveDir(d);return d}catch{return null}}
+async function useLast(){
+  const o={mode:'readwrite'};
+  if(await lastDir.queryPermission(o)==='granted'||await lastDir.requestPermission(o)==='granted')return lastDir;
+  return null;
+}
+pickBtn.onclick=async()=>{const d=await chooseDir();if(d)run(d)};
 go.onclick=async()=>{
-  let dir;try{dir=await showDirectoryPicker({mode:'readwrite'})}catch{return}
-  go.disabled=true;go.textContent='分類中…';status.className='';status.textContent='讀取資料夾…';
+  let d=null;
+  if(lastDir){try{d=await useLast()}catch{lastDir=null}} // 資料夾被移走或刪掉 → 重新選
+  if(!d&&!lastDir)d=await chooseDir();
+  if(d)run(d);else idle();
+};
+
+async function run(dir){
+  go.disabled=true;pickBtn.disabled=true;go.textContent='分類中…';status.className='';status.textContent='讀取資料夾…';
   $('sum').hidden=true;$('log').innerHTML='';$('logCard').hidden=false;
   const bar=$('bar');bar.hidden=false;bar.value=0;
   try{
@@ -187,10 +211,10 @@ go.onclick=async()=>{
     if(!n){status.textContent='這個資料夾裡沒有照片（只處理資料夾第一層的 jpg / png）。';$('logCard').hidden=true}
     else{status.textContent=c[UNKNOWN]?`完成！有 ${c[UNKNOWN]} 張無法辨識，請到「${UNKNOWN}」資料夾看一下。`:'完成！全部都分好了。';showSum(c)}
   }catch(e){status.className='err';status.textContent='發生錯誤：'+(e.message||e)}
-  go.disabled=false;go.textContent=label;
-};
+  idle();
+}
 
-window.wmSort={ready,classify,sortDir,readText};
+window.wmSort={ready,classify,sortDir,readText,saveDir,loadDir};
 }
 </script>
 </body>
