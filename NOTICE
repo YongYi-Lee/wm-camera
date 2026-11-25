@@ -1,0 +1,9 @@
+本專案 sort/ 目錄內含第三方元件：
+
+- ONNX Runtime Web 1.31.1（ort.wasm.min.js、ort-wasm-simd-threaded.*）
+  Copyright (c) Microsoft Corporation. MIT License.
+  https://github.com/microsoft/onnxruntime
+
+- PaddleOCR PP-OCRv3 文字偵測／辨識模型（det.onnx、rec.onnx）與字典（dict.txt）
+  Copyright (c) PaddlePaddle Authors. Apache License 2.0.
+  https://github.com/PaddlePaddle/PaddleOCR
