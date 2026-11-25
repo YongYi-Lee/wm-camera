@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>清洗照片分類</title>
+<link rel="icon" href="icon.png">
+<style>
+:root{color-scheme:light dark;--bg:light-dark(#f4f6fb,#0f1420);--card:light-dark(#fff,#1a2132);--ink:light-dark(#141a26,#e9edf5);--mute:light-dark(#5b6476,#9aa3b5);--line:light-dark(#dde2ec,#2b3448);--blue:#1f4fbf;--yel:#ffc800;--red:#d33;--ok:#1a8a4a}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.6 -apple-system,"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 20px 60px}
+h1{font-size:26px;margin:0 0 16px;display:flex;align-items:center;gap:10px}
+h1 i{width:14px;height:14px;border-radius:50%;background:var(--yel);display:inline-block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+p{margin:0 0 10px}
+.go{width:100%;min-height:72px;border:0;border-radius:14px;background:var(--blue);color:#fff;font-size:22px;font-weight:700;font-family:inherit;cursor:pointer}
+.go:disabled{opacity:.5;cursor:default}
+.mute{color:var(--mute);font-size:16px}
+progress{width:100%;height:14px;margin:14px 0 6px}
+#status{font-weight:700}
+#status.err{color:var(--red)}
+.sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.sum div{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center}
+.sum b{display:block;font-size:26px}
+.sum .unk b{color:var(--red)}
+#log{list-style:none;margin:0;padding:0;font-size:15px;max-height:360px;overflow:auto}
+#log li{padding:6px 2px;border-bottom:1px solid var(--line);display:flex;gap:10px}
+#log li span{flex:none;width:5.5em;font-weight:700}
+#log li.unk span{color:var(--red)}
+#log li em{font-style:normal;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:focus-visible{outline:3px solid var(--yel);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1><i></i>清洗照片分類</h1>
+
+<div class="card">
+  <p>選一個放照片的資料夾，會依照水印上的「清洗前／清洗中／清洗後」，把照片<b>移到</b>同名的子資料夾。</p>
+  <p class="mute">認不出來的照片會放進「無法辨識」，請自己看一下再搬。照片只在這台電腦上處理，不會上傳。</p>
+  <p id="unsup" class="mute" style="color:var(--red)" hidden>這個瀏覽器不支援選資料夾，請改用電腦版的 Chrome 或 Edge 開啟這個網頁。</p>
+  <button class="go" id="go" disabled>辨識模型載入中…</button>
+  <progress id="bar" value="0" max="1" hidden></progress>
+  <div id="status"></div>
+  <div class="sum" id="sum" hidden></div>
+</div>
+
+<div class="card" id="logCard" hidden><ul id="log"></ul></div>
+</main>
+
+<script src="sort/ort.wasm.min.js"></script>
+<script>
+{
+const BASE='sort/';
+const EXTS=/\.(jpe?g|png)$/i;
+const CLASSES=['清洗前','清洗中','清洗後'],UNKNOWN='無法辨識';
+const AFTER=new Set([...'後后俊候复浚']); // 模型偏簡體，「後」常被讀成「后／俊」
+const $=id=>document.getElementById(id);
+
+ort.env.wasm.wasmPaths=new URL(BASE,location.href).href;
+ort.env.wasm.numThreads=1;
+let det,rec,dict;
+const ready=(async()=>{
+  const opt={executionProviders:['wasm'],graphOptimizationLevel:'all'};
+  [det,rec,dict]=await Promise.all([
+    ort.InferenceSession.create(BASE+'det.onnx',opt),
+    ort.InferenceSession.create(BASE+'rec.onnx',opt),
+    fetch(BASE+'dict.txt').then(r=>r.text()).then(t=>['blank',...t.split('\n'),' '])]);
+})();
+
+const canvas=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c};
+function draw(src,sx,sy,sw,sh,dw,dh){const c=canvas(dw,dh),g=c.getContext('2d',{willReadFrequently:true});g.imageSmoothingQuality='high';g.drawImage(src,sx,sy,sw,sh,0,0,dw,dh);return c}
+function tensorOf(c,mean,std){
+  const {width:w,height:h}=c,d=c.getContext('2d').getImageData(0,0,w,h).data,n=w*h,out=new Float32Array(3*n);
+  for(let i=0;i<n;i++)for(let k=0;k<3;k++)out[k*n+i]=(d[i*4+k]/255-mean[k])/std[k];
+  return new ort.Tensor('float32',out,[1,3,h,w]);
+}
+
+// ---- 文字偵測（PP-OCRv3 det + DB 後處理，水平框） ----
+async function detect(src){
+  const w=src.width,h=src.height;
+  const ratio=Math.min(w,h)<736?736/Math.min(w,h):1;
+  const rh=Math.max(32,Math.round(Math.floor(h*ratio)/32)*32),rw=Math.max(32,Math.round(Math.floor(w*ratio)/32)*32);
+  const out=(await det.run({x:tensorOf(draw(src,0,0,w,h,rw,rh),[.485,.456,.406],[.229,.224,.225])}))[det.outputNames[0]];
+  const p=out.data,W=rw,H=rh;
+  const bm=new Uint8Array(W*H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){ // 二值化 + 2x2 膨脹
+    let v=0;for(let dy=-1;dy<=0&&!v;dy++)for(let dx=-1;dx<=0;dx++){const yy=y+dy,xx=x+dx;if(yy>=0&&xx>=0&&p[yy*W+xx]>.3){v=1;break}}
+    bm[y*W+x]=v}
+  const seen=new Uint8Array(W*H),boxes=[],st=[];
+  for(let s=0;s<W*H;s++){
+    if(!bm[s]||seen[s])continue;
+    let x0=W,x1=0,y0=H,y1=0;st.push(s);seen[s]=1;
+    while(st.length){const q=st.pop(),qx=q%W,qy=(q-qx)/W;
+      if(qx<x0)x0=qx;if(qx>x1)x1=qx;if(qy<y0)y0=qy;if(qy>y1)y1=qy;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=qx+dx,ny=qy+dy;if(nx<0||ny<0||nx>=W||ny>=H)continue;const r=ny*W+nx;if(bm[r]&&!seen[r]){seen[r]=1;st.push(r)}}}
+    const bw=x1-x0,bh=y1-y0;if(Math.min(bw,bh)<3)continue;
+    let sum=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)sum+=p[y*W+x];
+    if(sum/((bw+1)*(bh+1))<.5)continue;
+    const dd=bw*bh*1.6/(2*(bw+bh));
+    const X0=x0-dd,X1=x1+dd,Y0=y0-dd,Y1=y1+dd;
+    if(Math.min(X1-X0,Y1-Y0)<5)continue;
+    const sx=w/rw,sy=h/rh,cl=(v,m)=>Math.min(Math.max(Math.round(v),0),m-1);
+    boxes.push({x0:cl(X0*sx,w),x1:cl(X1*sx,w),y0:cl(Y0*sy,h),y1:cl(Y1*sy,h)});
+  }
+  return boxes.filter(b=>b.x1-b.x0>3&&b.y1-b.y0>3).sort((a,b)=>Math.abs(a.y0-b.y0)<10?a.x0-b.x0:a.y0-b.y0);
+}
+
+// ---- 文字辨識（PP-OCRv3 rec + CTC） ----
+async function recognize(src,b){
+  const bw=b.x1-b.x0,bh=b.y1-b.y0,W=Math.max(1,Math.floor(48*bw/bh));
+  const out=(await rec.run({x:tensorOf(draw(src,b.x0,b.y0,bw,bh,W,48),[.5,.5,.5],[.5,.5,.5])}))[rec.outputNames[0]];
+  const [,T,C]=out.dims,d=out.data;let s='',conf=0,n=0,prev=-1;
+  for(let t=0;t<T;t++){let m=0,mi=0;for(let c=0;c<C;c++){const v=d[t*C+c];if(v>m){m=v;mi=c}}
+    if(mi&&mi!==prev){s+=dict[mi];conf+=m;n++}prev=mi}
+  return n&&conf/n>=.5?s:'';
+}
+
+async function readText(src){const out=[];for(const b of await detect(src)){const t=await recognize(src,b);if(t)out.push(t)}return out.join(' ')}
+
+function pick(text){
+  let hit=null;
+  for(const m of text.matchAll(/清\s*洗\s*(\S)/g)){const c=m[1];
+    if(c==='前')hit='清洗前';else if(c==='中')hit='清洗中';else if(AFTER.has(c))hit='清洗後'}
+  return hit; // 進度列在最下面，取最後一個
+}
+
+async function classify(file){
+  await ready;
+  const im=await createImageBitmap(file,{imageOrientation:'from-image'});
+  const W=im.width,H=im.height;
+  try{
+    // 水印在左下角：先只看左下區塊，找不到再看整張
+    const y=Math.floor(H*.6),cw=Math.floor(W*.65);
+    let got=pick(await readText(draw(im,0,y,cw,H-y,cw,H-y)));
+    if(!got){const k=Math.min(1,2000/Math.max(W,H));got=pick(await readText(draw(im,0,0,W,H,Math.round(W*k),Math.round(H*k))))}
+    return got||UNKNOWN;
+  }finally{im.close()}
+}
+
+async function exists(dir,name){try{await dir.getFileHandle(name);return true}catch{return false}}
+async function moveInto(dir,h,file,sub){
+  const dot=h.name.lastIndexOf('.'),base=dot>0?h.name.slice(0,dot):h.name,ext=dot>0?h.name.slice(dot):'';
+  let name=h.name,k=1;while(await exists(sub,name))name=`${base} (${k++})${ext}`;
+  try{if(h.move){await h.move(sub,name);return}}catch(e){}
+  const nh=await sub.getFileHandle(name,{create:true}),w=await nh.createWritable();
+  await w.write(file);await w.close();await dir.removeEntry(h.name);
+}
+
+async function sortDir(dir,onEach){
+  const list=[];
+  for await(const h of dir.values())if(h.kind==='file'&&EXTS.test(h.name))list.push(h);
+  list.sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant',{numeric:true}));
+  const counts=Object.fromEntries([...CLASSES,UNKNOWN].map(c=>[c,0]));
+  for(let i=0;i<list.length;i++){
+    const h=list[i],file=await h.getFile();
+    let cls;try{cls=await classify(file)}catch(e){cls=UNKNOWN}
+    counts[cls]++;
+    await moveInto(dir,h,file,await dir.getDirectoryHandle(cls,{create:true}));
+    onEach?.(i+1,list.length,h.name,cls);
+  }
+  return counts;
+}
+
+function showSum(c){const s=$('sum');s.innerHTML='';s.hidden=false;
+  for(const [k,v] of Object.entries(c)){const d=document.createElement('div');if(k===UNKNOWN)d.className='unk';d.innerHTML=`<b>${v}</b>${k}`;s.appendChild(d)}}
+
+const go=$('go'),status=$('status');
+const label='選擇資料夾並開始分類';
+if(!window.showDirectoryPicker){$('unsup').hidden=false;go.textContent='請改用 Chrome 或 Edge'}
+else ready.then(()=>{go.disabled=false;go.textContent=label}).catch(()=>{go.textContent='模型載入失敗，請重新整理';status.className='err'});
+
+go.onclick=async()=>{
+  let dir;try{dir=await showDirectoryPicker({mode:'readwrite'})}catch{return}
+  go.disabled=true;go.textContent='分類中…';status.className='';status.textContent='讀取資料夾…';
+  $('sum').hidden=true;$('log').innerHTML='';$('logCard').hidden=false;
+  const bar=$('bar');bar.hidden=false;bar.value=0;
+  try{
+    const c=await sortDir(dir,(i,n,name,cls)=>{
+      bar.max=n;bar.value=i;status.textContent=`處理中 ${i} / ${n}`;
+      const li=document.createElement('li');if(cls===UNKNOWN)li.className='unk';
+      li.innerHTML='<span></span><em></em>';li.firstChild.textContent=cls;li.lastChild.textContent=name;
+      $('log').prepend(li)});
+    const n=Object.values(c).reduce((a,b)=>a+b,0);
+    if(!n){status.textContent='這個資料夾裡沒有照片（只處理資料夾第一層的 jpg / png）。';$('logCard').hidden=true}
+    else{status.textContent=c[UNKNOWN]?`完成！有 ${c[UNKNOWN]} 張無法辨識，請到「${UNKNOWN}」資料夾看一下。`:'完成！全部都分好了。';showSum(c)}
+  }catch(e){status.className='err';status.textContent='發生錯誤：'+(e.message||e)}
+  go.disabled=false;go.textContent=label;
+};
+
+window.wmSort={ready,classify,sortDir,readText};
+}
+</script>
+</body>
+</html>
