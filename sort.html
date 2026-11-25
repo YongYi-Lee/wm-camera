@@ -82,9 +82,9 @@ function tensorOf(c,mean,std){
 }
 
 // ---- 文字偵測（PP-OCRv3 det + DB 後處理，水平框） ----
-async function detect(src){
+async function detect(src,fixed){
   const w=src.width,h=src.height;
-  const ratio=Math.min(w,h)<736?736/Math.min(w,h):1;
+  const ratio=fixed||(Math.min(w,h)<736?736/Math.min(w,h):1);
   const rh=Math.max(32,Math.round(Math.floor(h*ratio)/32)*32),rw=Math.max(32,Math.round(Math.floor(w*ratio)/32)*32);
   const out=(await det.run({x:tensorOf(draw(src,0,0,w,h,rw,rh),[.485,.456,.406],[.229,.224,.225])}))[det.outputNames[0]];
   const p=out.data,W=rw,H=rh;
@@ -121,7 +121,7 @@ async function recognize(src,b){
   return n&&conf/n>=.5?s:'';
 }
 
-async function readText(src){const out=[];for(const b of await detect(src)){const t=await recognize(src,b);if(t)out.push(t)}return out.join(' ')}
+async function readText(src,ratio){const out=[];for(const b of await detect(src,ratio)){const t=await recognize(src,b);if(t)out.push(t)}return out.join(' ')}
 
 function pick(text){
   let hit=null;
@@ -135,9 +135,13 @@ async function classify(file){
   const im=await createImageBitmap(file,{imageOrientation:'from-image'});
   const W=im.width,H=im.height;
   try{
-    // 水印在左下角：先只看左下區塊，找不到再看整張
-    const y=Math.floor(H*.6),cw=Math.floor(W*.65);
-    let got=pick(await readText(draw(im,0,y,cw,H-y,cw,H-y)));
+    // 1) 進度列固定在最底下一行（本工具與今日水印同樣以短邊 1108 為基準），只裁這一條、縮小偵測
+    const s=Math.min(W,H)/1108,k=Math.min(1,2/s);
+    const sy=Math.max(0,Math.floor(H-112*s)),sw=Math.min(W,Math.ceil(760*s)),sh=H-sy;
+    const strip=draw(im,0,sy,sw,sh,Math.round(sw*k),Math.round(sh*k));
+    let got=pick(await readText(strip,128/strip.height));
+    // 2) 找不到（別的格式或被裁過）→ 左下區塊；3) 再不行 → 整張
+    if(!got){const y=Math.floor(H*.6),cw=Math.floor(W*.65);got=pick(await readText(draw(im,0,y,cw,H-y,cw,H-y)))}
     if(!got){const k=Math.min(1,2000/Math.max(W,H));got=pick(await readText(draw(im,0,0,W,H,Math.round(W*k),Math.round(H*k))))}
     return got||UNKNOWN;
   }finally{im.close()}
