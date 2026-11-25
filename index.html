@@ -47,6 +47,7 @@ input[type=file]{position:absolute;width:1px;height:1px;opacity:0}
 .acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.acts .btn{padding:0 6px}
 .out img{width:100%;border-radius:10px;display:block}
 .out p{margin:8px 0;font-size:14px;color:var(--mute)}
+.out p.bad{color:var(--red);font-weight:600}
 .prow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px}
 .prow .btn{width:100%;min-height:48px;font-weight:600}
 .empty{text-align:center;color:var(--mute);padding:28px 8px}
@@ -111,7 +112,33 @@ const T=()=>st.tabs.find(t=>t.id===st.cur)||st.tabs[0];
 const items=[];
 let editing=false;
 
-const today=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())}`};
+const pad=n=>String(n).padStart(2,'0');
+const today=()=>{const d=new Date();return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}`};
+const nowHMS=()=>{const d=new Date();return pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())};
+// 讀 JPEG 的 EXIF 拍攝時間（DateTimeOriginal，沒有才用 DateTime）→ {date:'2026.11.21',hms:'093012'}；讀不到回傳 null
+async function exifTime(file){
+  try{
+    const b=new DataView(await file.slice(0,262144).arrayBuffer());
+    if(b.getUint16(0)!==0xFFD8)return null;
+    let o=2;
+    while(o+4<=b.byteLength){
+      const m=b.getUint16(o),len=b.getUint16(o+2);
+      if(m===0xFFE1&&b.getUint32(o+4)===0x45786966){
+        const t=o+10,le=b.getUint16(t)===0x4949,u16=x=>b.getUint16(t+x,le),u32=x=>b.getUint32(t+x,le);
+        const ifd=(off,want)=>{const n=u16(off),r={};for(let i=0;i<n;i++){const e=off+2+i*12,tag=u16(e);if(want.includes(tag))r[tag]=e}return r};
+        const str=e=>{const n=u32(e+4),p=n>4?u32(e+8):e+8;let s='';for(let i=0;i<n-1;i++)s+=String.fromCharCode(b.getUint8(t+p+i));return s};
+        const i0=ifd(u32(4),[0x0132,0x8769]);let v=null;
+        if(i0[0x8769]){const ex=ifd(u32(i0[0x8769]+8),[0x9003,0x9004]);v=ex[0x9003]?str(ex[0x9003]):ex[0x9004]?str(ex[0x9004]):null}
+        if(!v&&i0[0x0132])v=str(i0[0x0132]);
+        const g=v&&v.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+        return g&&g[1]!=='0000'?{date:`${g[1]}.${g[2]}.${g[3]}`,hms:g[4]+g[5]+g[6]}:null;
+      }
+      if(m===0xFFDA||(m&0xFF00)!==0xFF00)return null;
+      o+=2+len;
+    }
+  }catch(e){}
+  return null;
+}
 const opts=(dl,arr)=>{dl.innerHTML='';(arr||[]).forEach(t=>{const o=document.createElement('option');o.value=t;dl.appendChild(o)})};
 const warn=m=>{const n=$('warn');n.textContent=m;n.hidden=false;clearTimeout(warn.t);warn.t=setTimeout(()=>n.hidden=true,3000)};
 const twoTap=(b,label,confirmText,fn)=>{if(!b.dataset.c){b.dataset.c=1;b.textContent=confirmText;b.classList.add('warn');b._t=setTimeout(()=>{delete b.dataset.c;b.textContent=label;b.classList.remove('warn')},3000);return}
@@ -211,7 +238,7 @@ const remember=()=>{
   t.fields.forEach(f=>{if(!f.auto&&f.name)st.hist[f.name]=add(st.hist[f.name],f.value)});
   persist();opts($('ttlL'),st.titles);
 };
-const snapshot=date=>{const t=T();return {tab:t.name,title:(t.title||'').trim(),date,
+const snapshot=(date,hms)=>{const t=T();return {tab:t.name,title:(t.title||'').trim(),date,hms,
   rows:t.fields.map(f=>[(f.name||'').trim(),f.auto==='date'?date:(f.value||'').trim()]).filter(r=>r[1]),
   prog:[(t.progName||'').trim(),(t.progOpts[t.prog]||'').trim()]}};
 
@@ -234,7 +261,7 @@ async function stamp(file,f){
   const x0=X(28),x1=x0+Math.max(X(506),vx-x0+vw+X(30),tw);
   const bot=1080,fb=hasP?1008:1080;
   const n=f.rows.length,mid=n?fb-(59+(n-1)*38.5):fb,hb=f.title?mid-63:mid;
-  if(!f.title&&!n&&!hasP)return new Promise(ok=>c.toBlob(b=>ok({url:URL.createObjectURL(b),blob:b}),'image/jpeg',.92));
+  if(!f.title&&!n&&!hasP)return finish(c);
   const top=Y(hb),r=X(12),B=Y(bot);
   g.save();g.beginPath();g.roundRect?g.roundRect(x0,top,x1-x0,B-top,r):g.rect(x0,top,x1-x0,B-top);g.clip();
   if(f.title){g.fillStyle='rgba(15,65,175,.88)';g.fillRect(x0,Y(hb),x1-x0,Y(mid)-Y(hb))}
@@ -248,18 +275,20 @@ async function stamp(file,f){
   const line=([a,b],y,col)=>{g.fillStyle=col;if(a)g.fillText(spaced(a)+':',X(45),y);g.fillText(b,vx,y)};
   f.rows.forEach((rw,j)=>line(rw,Y(mid+28+j*38.5),'#0a0a0a'));
   if(hasP)line(f.prog,Y(1047),'#fff');
-  return new Promise(ok=>c.toBlob(b=>ok({url:URL.createObjectURL(b),blob:b}),'image/jpeg',.92));
+  return finish(c);
 }
+// 轉成 JPEG 後立刻釋放畫布記憶體（iPhone Safari 對畫布總記憶體有上限，不釋放的話多張會失敗）
+function finish(c){return new Promise((ok,no)=>c.toBlob(b=>{c.width=c.height=0;b?ok({url:URL.createObjectURL(b),blob:b}):no(new Error('toBlob'))},'image/jpeg',.92))}
 
-const nameOf=it=>{const r=it.f.rows.find(x=>!x[0].includes('時間'))||['',''];return [r[1]||it.f.tab||'照片',it.f.prog[1],it.f.date.replace(/\./g,''),items.indexOf(it)+1].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g,'_')+'.jpg'};
+const nameOf=it=>{const r=it.f.rows.find(x=>!x[0].includes('時間'))||['',''];return [r[1]||it.f.tab||'照片',it.f.prog[1],it.f.date.replace(/\./g,''),it.f.hms,String(it.seq).padStart(4,'0')].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g,'_')+'.jpg'};
 async function shareFiles(list){
   const files=list.map(it=>new File([it.blob],nameOf(it),{type:'image/jpeg'}));
   if(navigator.canShare&&navigator.canShare({files})){
-    try{await navigator.share({files});list.forEach(it=>it.saved=true);return true}
-    catch(e){if(e.name==='AbortError')return false}
+    try{await navigator.share({files});list.forEach(it=>it.saved='shared');return true}
+    catch(e){if(e.name!=='AbortError')warn('沒有存成功，請再按一次儲存');return false}
   }
-  for(const fl of files){const a=document.createElement('a');a.href=URL.createObjectURL(fl);a.download=fl.name;document.body.appendChild(a);a.click();a.remove();await new Promise(r=>setTimeout(r,300))}
-  list.forEach(it=>it.saved=true);return true;
+  for(const fl of files){const a=document.createElement('a'),u=URL.createObjectURL(fl);a.href=u;a.download=fl.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);await new Promise(r=>setTimeout(r,300))}
+  list.forEach(it=>it.saved='dl');return true;
 }
 
 function show(){
@@ -267,27 +296,35 @@ function show(){
   if(!items.length){box.innerHTML='<div class="card empty">拍照後，加好水印的照片會出現在這裡。</div>';$('count').textContent='成果';$('acts').hidden=true;return}
   items.slice().reverse().forEach(it=>{
     const d=document.createElement('div');d.className='card out';
-    const im=document.createElement('img');im.src=it.url;im.alt='加好水印的照片';
+    const im=document.createElement('img');im.loading='lazy';im.decoding='async';im.src=it.url;im.alt='加好水印的照片';
     const p=document.createElement('p');p.textContent=[it.f.tab,...it.f.rows.filter(r=>!r[0].includes('時間')).map(r=>r[1]),it.f.prog[1]].filter(Boolean).join('・');
-    const b=document.createElement('button');b.className='btn';b.textContent=it.saved?'已儲存 ✓':'儲存照片';
-    b.onclick=async()=>{b.disabled=true;await shareFiles([it]);b.disabled=false;b.textContent=it.saved?'已儲存 ✓':'儲存照片'};
+    const lbl=()=>it.saved==='shared'?'已儲存 ✓':it.saved==='dl'?'已下載 ✓':'儲存照片';
+    const b=document.createElement('button');b.className='btn';b.textContent=lbl();
+    b.onclick=async()=>{b.disabled=true;await shareFiles([it]);b.disabled=false;b.textContent=lbl()};
     const x=document.createElement('button');x.className='btn';x.textContent='刪除';
     x.onclick=()=>twoTap(x,'刪除','確認刪除',()=>{URL.revokeObjectURL(it.url);items.splice(items.indexOf(it),1);show()});
     const r=document.createElement('div');r.className='prow';r.append(b,x);
-    d.append(im,p,r);box.appendChild(d);
+    d.append(im);
+    if(it.noTime){const q=document.createElement('p');q.className='bad';q.textContent=`⚠ 這張照片讀不到拍攝時間，水印日期用今天（${it.f.date}），請確認是否正確`;d.append(q)}
+    d.append(p,r);box.appendChild(d);
   });
   $('count').textContent=`成果（${items.length} 張）`;$('acts').hidden=false;
 }
 
-async function add(files){
+async function add(files,fromCam){
   if(!files.length)return;remember();
-  const date=today(),f=snapshot(date);
-  for(const file of files){try{const r=await stamp(file,f);items.push({file,url:r.url,blob:r.blob,f})}catch(e){warn('有照片無法讀取')}}
+  let bad=0;
+  for(const file of files){
+    const ex=await exifTime(file),noTime=!ex&&!fromCam; // 現拍的照片讀不到 EXIF 時，現在時間就是對的
+    const f=snapshot(ex?ex.date:today(),ex?ex.hms:nowHMS());
+    try{const r=await stamp(file,f);st.seq=(st.seq||0)+1;persist();items.push({file,url:r.url,blob:r.blob,f,noTime,seq:st.seq})}catch(e){bad++}
+  }
+  if(bad)warn(`有 ${bad} 張照片無法處理（檔案讀不到或記憶體不足），已略過，可以分批再選一次`);
   show();
 }
-$('cam').onchange=e=>{add([...e.target.files]);e.target.value=''};
-$('lib').onchange=e=>{add([...e.target.files]);e.target.value=''};
-$('redo').onclick=async()=>{remember();for(const it of items){URL.revokeObjectURL(it.url);it.f=snapshot(it.f.date);const r=await stamp(it.file,it.f);it.url=r.url;it.blob=r.blob;it.saved=false}show()};
+$('cam').onchange=e=>{add([...e.target.files],true);e.target.value=''};
+$('lib').onchange=e=>{add([...e.target.files],false);e.target.value=''};
+$('redo').onclick=async()=>{remember();let bad=0;for(const it of items){try{const f=snapshot(it.f.date,it.f.hms),r=await stamp(it.file,f);URL.revokeObjectURL(it.url);it.f=f;it.url=r.url;it.blob=r.blob;it.saved=false}catch(e){bad++}}if(bad)warn(`有 ${bad} 張沒能重新套用，保留原本的水印`);show()};
 $('all').onclick=async()=>{const todo=items.filter(it=>!it.saved);if(!todo.length){warn('全部都已儲存過');return}if(await shareFiles(todo))show()};
 $('clr').onclick=()=>twoTap($('clr'),'全部移除','再按一次確認',()=>{items.forEach(it=>URL.revokeObjectURL(it.url));items.length=0;show()});
 
