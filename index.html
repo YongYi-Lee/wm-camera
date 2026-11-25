@@ -329,6 +329,7 @@ $('all').onclick=async()=>{const todo=items.filter(it=>!it.saved);if(!todo.lengt
 $('clr').onclick=()=>twoTap($('clr'),'全部移除','再按一次確認',()=>{items.forEach(it=>URL.revokeObjectURL(it.url));items.length=0;show()});
 
 render();show();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 </script>
 
